@@ -26,7 +26,7 @@ process buildCode {
   input:
     val gitRepoName from 'nowellpack'
     val gitUser from 'UBC-Stat-ML'
-    val codeRevision from 'd718b06cbc3f6484eeb755ec64186d5924fb28f0'
+    val codeRevision from 'f6d29b758a83ee6e09d0f0b282a5cfc4a5a5293d'
     val snapshotPath from "${System.getProperty('user.home')}/w/nowellpack"
   output:
     file 'code' into code
@@ -61,6 +61,8 @@ process run {
     each cell from cells
     file code
     file preprocessed
+  output:
+    file 'results/latest' into runs
   """
   java -cp code/lib/\\* -Xmx1g chromobreak.SingleCell \
     --experimentConfigs.resultsHTMLPage false \
@@ -80,6 +82,20 @@ process run {
     --postProcessor.runPxviz false \
     --engine.nThreads Single
   echo "\ncell\t${cell.parent.name}" >> results/latest/arguments.tsv
+  """
+}
+
+process aggregate {
+  input:
+    file 'exec_*' from runs.toList()
+    file code
+    file preprocessed
+  """
+  java -cp code/lib/\\* -Xmx1g corrupt.pre.ComputeDeltas \
+    --experimentConfigs.resultsHTMLPage false \
+    --source FromPosteriorSamples \
+    --source.files `find . | grep exec` \
+    --source.lociIndexFile $preprocessed/tidyReads/lociIndex.csv.gz
   """
 }
 
