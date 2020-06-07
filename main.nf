@@ -91,7 +91,7 @@ process aggregate {
     file code
     file preprocessed
   """
-  java -cp code/lib/\\* -Xmx1g corrupt.pre.ComputeDeltas \
+  java -cp code/lib/\\* -Xmx30g corrupt.pre.ComputeDeltas \
     --experimentConfigs.resultsHTMLPage false \
     --source FromPosteriorSamples \
     --source.files `find . | grep exec` \
