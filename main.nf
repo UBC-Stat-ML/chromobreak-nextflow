@@ -26,7 +26,7 @@ process buildCode {
   input:
     val gitRepoName from 'nowellpack'
     val gitUser from 'UBC-Stat-ML'
-    val codeRevision from 'f6d29b758a83ee6e09d0f0b282a5cfc4a5a5293d'
+    val codeRevision from 'a87e25420f2d553b56fe36ff2ddb188a9eef52b9'
     val snapshotPath from "${System.getProperty('user.home')}/w/nowellpack"
   output:
     file 'code' into code
@@ -77,6 +77,7 @@ process run {
     --engine.initialization FORWARD \
     --model.configs.annealingStrategy Exponentiation \
     --model.configs.annealingStrategy.thinning 1  \
+    --model.configs.maxStates 10 \
     --engine.nPassesPerScan 1 \
     --postProcessor chromobreak.ChromoPostProcessor \
     --postProcessor.runPxviz false \
@@ -87,17 +88,18 @@ process run {
 
 process aggregate {
   input:
-    file 'exec_*' from runs.toList()
+    file 'runs/exec_*' from runs.toList()
     file code
     file preprocessed
   """
-  java -cp code/lib/\\* -Xmx30g corrupt.pre.ComputeDeltas \
+  java -cp code/lib/\\* -Xmx8g corrupt.pre.ComputeDeltas \
     --experimentConfigs.resultsHTMLPage false \
     --source FromPosteriorSamples \
-    --source.files `find . | grep exec` \
+    --source.files `find runs | grep exec` \
     --source.lociIndexFile $preprocessed/tidyReads/lociIndex.csv.gz
   """
 }
+
 
 
 process summarizePipeline {
