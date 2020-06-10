@@ -6,9 +6,10 @@ params.reads
 params.gc
 params.dryRun = false
 
+params.dryRunLimit = 6
 dryRunLimit = Integer.MAX_VALUE
 if (params.dryRun) {
-  dryRunLimit = 2
+  dryRunLimit = params.dryRunLimit
 }
 
 reads = file(params.reads)
@@ -91,9 +92,11 @@ process computeDeltas {
     file preprocessed
   output:
     file 'results/deltas/matrix-*.csv.gz' into deltas
+    file 'results/deltas/snapshot' into snapshot
   """
   java -cp code/lib/\\* -Xmx8g corrupt.pre.ComputeDeltas \
     --experimentConfigs.resultsHTMLPage false \
+    --experimentConfigs.tabularWriter.compressed true \
     --source FromPosteriorSamples \
     --source.files `find runs | grep exec` \
     --source.lociIndexFile $preprocessed/tidyReads/lociIndex.csv.gz
