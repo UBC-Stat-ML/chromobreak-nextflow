@@ -24,7 +24,7 @@ process buildCode {
   input:
     val gitRepoName from 'nowellpack'
     val gitUser from 'UBC-Stat-ML'
-    val codeRevision from '1923463e742a1a406840163ef5b374b97088c982'
+    val codeRevision from '31e67953f7a3a910239f55a7172b513e19c14510'
     val snapshotPath from "${System.getProperty('user.home')}/w/nowellpack"
   output:
     file 'code' into code
