@@ -18,15 +18,12 @@ if (reads == null || gc == null) {
   throw new RuntimeException("Required options: --reads and --gc")
 }
 
-deliverableDir = 'deliverables/' + workflow.scriptName.replace('.nf','') + "_" + params.reads + "/"
-
-
 process buildCode {
   cache true 
   input:
     val gitRepoName from 'nowellpack'
     val gitUser from 'UBC-Stat-ML'
-    val codeRevision from '2a08de7cf5312f8946693f0c52cbc266b244cb7c'
+    val codeRevision from '558727b40932f878c3d5c481c6d203ea9884f525'
     val snapshotPath from "${System.getProperty('user.home')}/w/nowellpack"
   output:
     file 'code' into code
@@ -44,18 +41,19 @@ process preprocess {
     file 'results/preprocessed' into preprocessed
     file 'results/preprocessed/tidyReads/tidy/*/data.csv.gz' into cells
   """
-  java -cp code/lib/\\* -Xmx1g chromobreak.Preprocess \
+  java -cp code/lib/\\* -Xmx2g chromobreak.Preprocess \
     --experimentConfigs.resultsHTMLPage false \
     --experimentConfigs.tabularWriter.compressed true \
     --reads $reads \
     --gc $gc \
-    --maxNCells $dryRunLimit 
+    --maxNCells $dryRunLimit \
+    --maxNChromosomes $dryRunLimit 
   mv results/latest results/preprocessed
   """
 }
 
 
-process run { 
+process inferCopyNumbers { 
   echo true
   input:
     each cell from cells
@@ -80,37 +78,137 @@ process run {
     --model.configs.maxStates 10 \
     --engine.nPassesPerScan 1 \
     --postProcessor chromobreak.ChromoPostProcessor \
-    --postProcessor.runPxviz false \
+    --postProcessor.runPxviz true \
     --engine.nThreads Single
   echo "\ncell\t${cell.parent.name}" >> results/latest/arguments.tsv
   """
 }
 
-process aggregate {
+process computeDeltas {
   input:
     file 'runs/exec_*' from runs.toList()
     file code
     file preprocessed
+  output:
+    file 'results/deltas/matrix-*.csv.gz' into deltas
   """
   java -cp code/lib/\\* -Xmx8g corrupt.pre.ComputeDeltas \
     --experimentConfigs.resultsHTMLPage false \
     --source FromPosteriorSamples \
     --source.files `find runs | grep exec` \
     --source.lociIndexFile $preprocessed/tidyReads/lociIndex.csv.gz
+  mv results/latest results/deltas
+  
   """
 }
 
 
-
-process summarizePipeline {
-  cache false 
+process dejitter {
+  input:
+    each delta from deltas
+    file code
   output:
-      file 'pipeline-info.txt'
-  publishDir deliverableDir, mode: 'copy', overwrite: true
+    file 'results/dejittered' into dejittered
   """
-  echo 'scriptName: $workflow.scriptName' >> pipeline-info.txt
-  echo 'start: $workflow.start' >> pipeline-info.txt
-  echo 'runName: $workflow.runName' >> pipeline-info.txt
-  echo 'nextflow.version: $workflow.nextflow.version' >> pipeline-info.txt
+  java -cp code/lib/\\* -Xmx8g corrupt.pre.StraightenJitter \
+    --experimentConfigs.resultsHTMLPage false \
+    --experimentConfigs.tabularWriter.compressed true \
+    --neighborhoodSize 4 \
+    --input ${delta}
+  mv results/latest results/dejittered
   """
 }
+
+dejittered.into {
+  dejittered_filter
+  dejittered_viz
+}
+
+process filterLoci {
+  input:
+    file 'dejittered/exec_*' from dejittered_filter.toList()
+    file code
+  output:
+    file 'results/filtered' into filtered
+  """
+  java -cp code/lib/\\* -Xmx8g corrupt.pre.Filter \
+    --experimentConfigs.resultsHTMLPage false \
+    --experimentConfigs.tabularWriter.compressed true \
+    --inputs `find -L  dejittered -name "binarized.csv.gz" -print`
+  mv results/latest results/filtered
+  """
+}
+
+
+process inferTree {
+  input:
+    file filtered
+    file code
+  output:
+    file 'results/sitka' into sitka
+  """
+  java -cp code/lib/\\* -Xmx8g corrupt.NoisyBinaryModel \
+    --experimentConfigs.resultsHTMLPage false \
+    --experimentConfigs.tabularWriter.compressed true \
+    --model.binaryMatrix $filtered/filtered-shrunk.csv.gz \
+    --model.globalParameterization true \
+    --model.fprBound 0.1 \
+    --model.fnrBound 0.5 \
+    --model.minBound 0.001 \
+    --engine PT \
+    --engine.nChains 1 \
+    --engine.nScans ${Math.min(200, dryRunLimit)} \
+    --engine.thinning 1 \
+    --postProcessor corrupt.post.CorruptPostProcessor \
+    --model.samplerOptions.useCellReallocationMove true \
+    --postProcessor.runPxviz true \
+    --engine.nPassesPerScan 0.5 \
+    --model.predictivesProportion 0.05 \
+    --engine.nThreads MAX \
+    --engine.scmInit.nParticles 1000 \
+    --engine.initialization FORWARD \
+    --stripped false \
+    --engine.random 1 \
+    --model.samplerOptions.useMiniMoves false
+  mv results/latest results/sitka
+  """
+}
+
+
+process treeOrderedViz {
+  input:
+    file sitka
+    file deltas
+    file 'dejittered/exec_*' from dejittered_viz.toList()
+    file filtered
+    file code
+  """
+  java -cp code/lib/\\* -Xmx8g corrupt.viz.SplitPerfectPhyloViz \
+    --experimentConfigs.resultsHTMLPage false \
+    --experimentConfigs.tabularWriter.compressed true \
+    --phylo file ${sitka}/consensus.newick \
+    --matrices `ls *gz` \
+    --suffix step_1_delta \
+    --size width 300
+  mv results/latest/output/*.pdf .
+  
+  java -cp code/lib/\\* -Xmx8g corrupt.viz.SplitPerfectPhyloViz \
+    --experimentConfigs.resultsHTMLPage false \
+    --experimentConfigs.tabularWriter.compressed true \
+    --phylo file ${sitka}/consensus.newick \
+    --matrices `find -L  dejittered -name "binarized.csv.gz" -print` \
+    --suffix step_2_dejittered \
+    --size width 300
+  mv results/latest/output/*.pdf .
+  
+  java -cp code/lib/\\* -Xmx8g corrupt.viz.SplitPerfectPhyloViz \
+    --experimentConfigs.resultsHTMLPage false \
+    --experimentConfigs.tabularWriter.compressed true \
+    --phylo file ${sitka}/consensus.newick \
+    --matrices filtered/filtered-full.csv.gz \
+    --suffix step_3_filtered \
+    --size width 300
+  mv results/latest/output/*.pdf .
+  """
+}
+
