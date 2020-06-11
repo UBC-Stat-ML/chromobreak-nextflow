@@ -2,7 +2,7 @@
 
 mkdir -p reports
 
-PREFIX="run main.nf -resume -with-timeline reports/timeline.html -with-report reports/report.html -with-trace reports/trace.txt -with-dag reports/dag.dot "
+PREFIX="run sitka.nf -resume -with-timeline reports/timeline.html -with-report reports/report.html -with-trace reports/trace.txt -with-dag reports/dag.dot "
 
 if [ -n "$DISPLAY" ]; then 
   ./nextflow $PREFIX "$@" | nf-monitor --open true
