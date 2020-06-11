@@ -24,7 +24,7 @@ process buildCode {
   input:
     val gitRepoName from 'nowellpack'
     val gitUser from 'UBC-Stat-ML'
-    val codeRevision from 'ff98ddef65b6bfea92ee7c0497f34051d0cac433'
+    val codeRevision from '49e5f92896a2fcd88bb0d5d2970ed90c9079a5fa'
     val snapshotPath from "${System.getProperty('user.home')}/w/nowellpack"
   output:
     file 'code' into code
@@ -92,7 +92,7 @@ process computeDeltas {
     file preprocessed
   output:
     file 'results/deltas/matrix-*.csv.gz' into deltas
-    file 'results/deltas/snapshot' into snapshot
+    file 'results/deltas/snapshot/*.csv.gz' into snapshots
   """
   java -cp code/lib/\\* -Xmx8g corrupt.pre.ComputeDeltas \
     --experimentConfigs.resultsHTMLPage false \
@@ -212,6 +212,22 @@ process treeOrderedViz {
     --suffix step_3_filtered \
     --size width 300
   mv results/latest/output/*.pdf .
+  """
+}
+
+process cnaViz {
+  input:
+    file code
+    each snapshot from snapshots
+    file sitka
+  """
+  java -cp code/lib/\\* -Xmx8g corrupt.viz.SplitPerfectPhyloViz \
+    --experimentConfigs.resultsHTMLPage false \
+    --experimentConfigs.tabularWriter.compressed true \
+    --phylo file ${sitka}/consensus.newick \
+    --matrices $snapshot \
+    --colourCodes 0 12 \
+    --size width 300
   """
 }
 
