@@ -6,7 +6,7 @@ params.reads
 params.gc
 params.dryRun = false
 
-params.dryRunLimit = 6
+params.dryRunLimit = 4
 dryRunLimit = Integer.MAX_VALUE
 if (params.dryRun) {
   dryRunLimit = params.dryRunLimit
@@ -24,7 +24,7 @@ process buildCode {
   input:
     val gitRepoName from 'nowellpack'
     val gitUser from 'UBC-Stat-ML'
-    val codeRevision from '31e67953f7a3a910239f55a7172b513e19c14510'
+    val codeRevision from 'ff98ddef65b6bfea92ee7c0497f34051d0cac433'
     val snapshotPath from "${System.getProperty('user.home')}/w/nowellpack"
   output:
     file 'code' into code
