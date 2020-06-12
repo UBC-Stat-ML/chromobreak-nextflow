@@ -101,7 +101,7 @@ process computeDeltas {
     --source.files `find runs | grep exec` \
     --source.lociIndexFile $preprocessed/tidyReads/lociIndex.csv.gz
   mv results/latest results/deltas
-  
+  mv results/deltas/matrix-2.csv.gz results/deltas/bu #ignore small jumps - noisy
   """
 }
 
