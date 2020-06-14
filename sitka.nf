@@ -2,8 +2,8 @@
 
 pwd=new File(".").getAbsolutePath()
 
-params.reads
-params.gc
+params.deltas
+params.cns
 params.dryRun = false
 
 params.dryRunLimit = 4
@@ -12,12 +12,15 @@ if (params.dryRun) {
   dryRunLimit = params.dryRunLimit
 }
 
-reads = file(params.reads)
-gc = file(params.gc)
+deltasDir = file(params.deltas)
+cnsDir = file(params.cns)
 
-if (reads == null || gc == null) {
-  throw new RuntimeException("Required options: --reads and --gc")
+if (deltasDir == null || cnsDir == null) {
+  throw new RuntimeException("Required options: --deltas and --cns")
 }
+
+deltas = Channel.fromPath( deltasDir + '/matrix-*' )
+cns = Channel.fromPath( cnsDir + '/*.csv*' )
 
 process buildCode {
   cache true 
@@ -32,78 +35,6 @@ process buildCode {
     template 'buildRepo.sh' 
 }
 
-
-process preprocess {
-  input:
-    file code
-    file reads
-    file gc
-  output:
-    file 'results/preprocessed' into preprocessed
-    file 'results/preprocessed/tidyReads/tidy/*/data.csv.gz' into cells
-  """
-  java -cp code/lib/\\* -Xmx2g chromobreak.Preprocess \
-    --experimentConfigs.resultsHTMLPage false \
-    --experimentConfigs.tabularWriter.compressed true \
-    --reads $reads \
-    --gc $gc \
-    --maxNCells $dryRunLimit \
-    --maxNChromosomes $dryRunLimit 
-  mv results/latest results/preprocessed
-  """
-}
-
-
-process inferCopyNumbers { 
-  echo true
-  input:
-    each cell from cells
-    file code
-    file preprocessed
-  output:
-    file 'results/latest' into runs
-  """
-  java -cp code/lib/\\* -Xmx1g chromobreak.SingleCell \
-    --experimentConfigs.resultsHTMLPage false \
-    --experimentConfigs.tabularWriter.compressed true \
-    --model.data.source $preprocessed/tidyGC/tidy.csv.gz \
-    --model.data.gcContents.name value \
-    --model.data.readCounts.name value \
-    --model.data.readCounts.dataSource $preprocessed/tidyReads/tidy/${cell.parent.name}/data.csv.gz \
-    --engine.nScans ${Math.min(200, dryRunLimit)} \
-    --engine PT \
-    --engine.nChains 1 \
-    --engine.initialization FORWARD \
-    --model.configs.annealingStrategy Exponentiation \
-    --model.configs.annealingStrategy.thinning 1  \
-    --model.configs.maxStates 10 \
-    --engine.nPassesPerScan 1 \
-    --postProcessor chromobreak.ChromoPostProcessor \
-    --postProcessor.runPxviz true \
-    --engine.nThreads Single
-  echo "\ncell\t${cell.parent.name}" >> results/latest/arguments.tsv
-  """
-}
-
-process computeDeltas {
-  input:
-    file 'runs/exec_*' from runs.toList()
-    file code
-    file preprocessed
-  output:
-    file 'results/deltas/matrix-*.csv.gz' into deltas
-    file 'results/deltas/snapshot/*.csv.gz' into snapshots
-  """
-  java -cp code/lib/\\* -Xmx8g corrupt.pre.ComputeDeltas \
-    --experimentConfigs.resultsHTMLPage false \
-    --experimentConfigs.tabularWriter.compressed true \
-    --source FromPosteriorSamples \
-    --source.files `find runs | grep exec` \
-    --source.lociIndexFile $preprocessed/tidyReads/lociIndex.csv.gz
-  mv results/latest results/deltas
-  mv results/deltas/matrix-2.csv.gz results/deltas/bu #ignore small jumps - noisy
-  """
-}
 
 
 process dejitter {
@@ -218,7 +149,7 @@ process treeOrderedViz {
 process cnaViz {
   input:
     file code
-    each snapshot from snapshots
+    each snapshot from cns
     file sitka
   """
   java -cp code/lib/\\* -Xmx8g corrupt.viz.SplitPerfectPhyloViz \
