@@ -15,8 +15,8 @@ if (params.dryRun) {
 deltasDir = file(params.deltas)
 cnsDir = file(params.cns)
 
-if (deltasDir == null || cnsDir == null) {
-  throw new RuntimeException("Required options: --deltas and --cns")
+if (!deltasDir.exists() || !cnsDir.exists()) {
+  throw new RuntimeException("Required options should point to directories: --deltas and --cns")
 }
 
 deltas = Channel.fromPath( deltasDir + '/matrix-*' )
@@ -27,7 +27,7 @@ process buildCode {
   input:
     val gitRepoName from 'nowellpack'
     val gitUser from 'UBC-Stat-ML'
-    val codeRevision from '49e5f92896a2fcd88bb0d5d2970ed90c9079a5fa'
+    val codeRevision from '48b171fd01e906a740eac97a7f0ad821a9b67505'
     val snapshotPath from "${System.getProperty('user.home')}/w/nowellpack"
   output:
     file 'code' into code
@@ -47,7 +47,7 @@ process dejitter {
   java -cp code/lib/\\* -Xmx8g corrupt.pre.StraightenJitter \
     --experimentConfigs.resultsHTMLPage false \
     --experimentConfigs.tabularWriter.compressed true \
-    --neighborhoodSize 4 \
+    --maxError 0.1 \
     --input ${delta}
   mv results/latest results/dejittered
   """
@@ -68,7 +68,7 @@ process filterLoci {
   java -cp code/lib/\\* -Xmx8g corrupt.pre.Filter \
     --experimentConfigs.resultsHTMLPage false \
     --experimentConfigs.tabularWriter.compressed true \
-    --inputs `find -L  dejittered -name "binarized.csv.gz" -print`
+    --inputs `find -L  dejittered -name "exec_*" -print`
   mv results/latest results/filtered
   """
 }
@@ -97,7 +97,7 @@ process inferTree {
     --model.samplerOptions.useCellReallocationMove true \
     --postProcessor.runPxviz true \
     --engine.nPassesPerScan 0.5 \
-    --model.predictivesProportion 0.05 \
+    --model.predictivesProportion 0.00 \
     --engine.nThreads MAX \
     --engine.scmInit.nParticles 1000 \
     --engine.initialization FORWARD \
@@ -112,7 +112,6 @@ process inferTree {
 process treeOrderedViz {
   input:
     file sitka
-    file deltas
     file 'dejittered/exec_*' from dejittered_viz.toList()
     file filtered
     file code
@@ -121,7 +120,7 @@ process treeOrderedViz {
     --experimentConfigs.resultsHTMLPage false \
     --experimentConfigs.tabularWriter.compressed true \
     --phylo file ${sitka}/consensus.newick \
-    --matrices `ls *gz` \
+    --matrices `ls $deltasDir/*gz` \
     --suffix step_1_delta \
     --size width 300
   mv results/latest/output/*.pdf .
